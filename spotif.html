@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bollywood Song Finder for Antakshari</title>
+    <style>
+        body {
+            background-color: #1e1e1e;
+            color: white;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .container {
+            width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+            border: 2px solid #00FF00;
+            border-radius: 10px;
+            background-color: #2b2b2b;
+        }
+
+        h1 {
+            color: #00FF00;
+            margin-bottom: 20px;
+        }
+
+        label {
+            font-weight: bold;
+            color: #00FF00;
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        input[type="text"] {
+            width: 80%;
+            padding: 10px;
+            border-radius: 5px;
+            border: 2px solid #00FF00;
+            background-color: #404040;
+            color: white;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 10px 20px;
+            background-color: #00FF00;
+            border: none;
+            color: black;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+
+        button:hover {
+            background-color: #00cc00;
+        }
+
+        #resultText {
+            margin-top: 20px;
+            text-align: left;
+            background-color: #404040;
+            padding: 10px;
+            border-radius: 5px;
+            border: 2px solid #00FF00;
+            color: white;
+            height: 200px;
+            overflow-y: scroll;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Bollywood Song Finder for Antakshari</h1>
+    <label for="inputText">Enter a letter or word:</label>
+    <input type="text" id="inputText" placeholder="Type here..." />
+    <button id="searchButton">Search</button>
+    <div id="resultText"></div>
+</div>
+
+<script>
+    const spotifyClientId = 'your_spotify_client_id';  // Replace with your Spotify Client ID
+    const spotifyClientSecret = 'your_spotify_client_secret';  // Replace with your Spotify Client Secret
+    const geniusApiKey = 'your_genius_api_key';  // Replace with your Genius API key
+
+    // Global token variable to hold the Spotify access token
+    let spotifyToken = '';
+
+    // Function to get Spotify access token
+    async function getSpotifyAccessToken() {
+        const response = await fetch('https://accounts.spotify.com/api/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Authorization': 'Basic ' + btoa(spotifyClientId + ':' + spotifyClientSecret)
+            },
+            body: 'grant_type=client_credentials'
+        });
+        const data = await response.json();
+        spotifyToken = data.access_token;
+    }
+
+    // Function to search for songs
+    document.getElementById('searchButton').addEventListener('click', async () => {
+        const inputText = document.getElementById('inputText').value.trim();
+
+        if (!inputText) {
+            alert('Please enter a letter or word.');
+            return;
+        }
+
+        // Fetch Spotify token if it's not already fetched
+        if (!spotifyToken) {
+            await getSpotifyAccessToken();
+        }
+
+        if (inputText.length === 1 && /^[a-zA-Z]$/.test(inputText)) {
+            searchSongsByFirstLetter(inputText);
+        } else {
+            searchSongsByWord(inputText);
+        }
+    });
+
+    // Function to search songs by the first letter of lyrics
+    async function searchSongsByFirstLetter(letter) {
+        try {
+            const spotifySearchUrl = `https://api.spotify.com/v1/search?q=genre:bollywood&type=track&limit=50`;
+            const response = await fetch(spotifySearchUrl, {
+                headers: {
+                    'Authorization': `Bearer ${spotifyToken}`
+                }
+            });
+            const data = await response.json();
+
+            if (data.tracks && data.tracks.items.length > 0) {
+                let foundSongs = [];
+                for (const track of data.tracks.items) {
+                    const songName = track.name;
+                    const artistName = track.artists[0].name;
+
+                    // Fetch lyrics from Genius
+                    const geniusSearchUrl = `https://api.genius.com/search?q=${encodeURIComponent(songName)}&access_token=${geniusApiKey}`;
+                    const lyricsResponse = await fetch(geniusSearchUrl);
+                    const lyricsData = await lyricsResponse.json();
+
+                    if (lyricsData.response.hits.length > 0) {
+                        const songInfo = lyricsData.response.hits[0].result;
+                        const songLyrics = await getSongLyrics(songInfo.id);
+                        const firstLine = songLyrics.split('\n')[0].trim();
+
+                        if (firstLine.toLowerCase().startsWith(letter.toLowerCase())) {
+                            foundSongs.push({
+                                name: songName,
+                                artist: artistName,
+                                firstLine: firstLine
+                            });
+                        }
+                    }
+                }
+
+                displaySongs(foundSongs, `Songs where the first line starts with '${letter}'`);
+            } else {
+                displayNoResults();
+            }
+        } catch (error) {
+            console.error('Error searching songs:', error);
+        }
+    }
+
+    // Function to search songs by a word in the title or lyrics
+    async function searchSongsByWord(word) {
+        try {
+            const spotifySearchUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(word)} genre:bollywood&type=track&limit=50`;
+            const response = await fetch(spotifySearchUrl, {
+                headers: {
+                    'Authorization': `Bearer ${spotifyToken}`
+                }
+            });
+            const data = await response.json();
+
+            if (data.tracks && data.tracks.items.length > 0) {
+                let foundSongs = data.tracks.items.map(track => ({
+                    name: track.name,
+                    artist: track.artists[0].name
+                }));
+
+                displaySongs(foundSongs, `Songs containing '${word}' in the title or lyrics`);
+            } else {
+                displayNoResults();
+            }
+        } catch (error) {
+            console.error('Error searching songs:', error);
+        }
+    }
+
+    // Helper function to get song lyrics from Genius by song ID
+    async function getSongLyrics(songId) {
+        const geniusLyricsUrl = `https://api.genius.com/songs/${songId}?access_token=${geniusApiKey}`;
+        const response = await fetch(geniusLyricsUrl);
+        const data = await response.json();
+        return data.response.song.lyrics || '';
+    }
+
+    // Function to display the songs in the result area
+    function displaySongs(songs, title) {
+        const resultText = document.getElementById('resultText');
+        resultText.innerHTML = `<h3>${title}</h3>`;
+        songs.forEach((song, index) => {
+            resultText.innerHTML += `<p>${index + 1}. <strong>${song.name}</strong> by ${song.artist}<br>First line: ${song.firstLine || 'N/A'}</p>`;
+        });
+    }
+
+    // Function to display "No Results" message
+    function displayNoResults() {
+        const resultText = document.getElementById('resultText');
+        resultText.innerHTML = '<p>No results found.</p>';
+    }
+</script>
+
+</body>
+</html>
